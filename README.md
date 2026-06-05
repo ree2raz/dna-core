@@ -72,7 +72,7 @@ npm install
 npm run dev
 ```
 
-Then open <http://localhost:5173/>.
+Then open <http://localhost:5178/>.
 
 The npm scripts `predev` and `prebuild` automatically run `sync:wasm`, which copies the compiled `.wasm` from `crates/dna-core/pkg/` into `web/public/wasm/`. So if you rebuild the Rust side, just re-run `npm run dev` and the latest WASM will be picked up.
 
@@ -81,15 +81,34 @@ The npm scripts `predev` and `prebuild` automatically run `sync:wasm`, which cop
 ```bash
 # From web/
 npm run build      # also rebuilds + syncs the WASM
-npm run preview    # serves dist/ on http://localhost:4173/
 ```
 
-The output is in `web/dist/`. Drop it on any static host (Vercel, Netlify, GitHub Pages, S3+CloudFront, etc.).
+The build is configured for a **GitHub Pages project page at `/dna-core/`** (the Vite `base` is `/dna-core/` for `vite build`, and `/` for `vite dev`). The output goes to `web/dist/` and is ready to serve at the repo root.
 
-### Deploying to GitHub Pages / Vercel / Netlify
+To rebuild for a different base path, edit `web/vite.config.ts` and change `GITHUB_PAGES_BASE`.
+
+## Deployment
+
+### GitHub Pages (automatic)
+
+The repo includes `.github/workflows/pages.yml`, which builds the Rust crate, compiles WASM, builds the Vite app, and deploys `web/dist/` to GitHub Pages on every push to `main`.
+
+To enable it:
+
+1. Go to **Settings → Pages** in your GitHub repo.
+2. Under **Source**, select **GitHub Actions**.
+3. Push to `main` — the workflow will build and deploy.
+
+The app will be live at `https://<owner>.github.io/dna-core/`.
+
+The first push after enabling Pages may take a minute to provision the environment. Subsequent deploys are fast.
+
+### Other static hosts
 
 - **Build command**: `cd web && npm install && npm run build`
 - **Output directory**: `web/dist`
+
+If your host serves the site at a sub-path (e.g. `https://example.com/dna-core/`), update `GITHUB_PAGES_BASE` in `web/vite.config.ts` before building. For root-path hosts (Vercel/Netlify custom domain, S3+CloudFront), set it to `'/'`.
 
 ## Rust core
 

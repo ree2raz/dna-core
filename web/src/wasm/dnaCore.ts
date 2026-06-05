@@ -1,7 +1,7 @@
 import initWasm, * as wasm from 'dna-core'
 import type { HelixData } from '../lib/types'
 
-const WASM_URL = '/wasm/dna_core_bg.wasm'
+const WASM_URL = `${import.meta.env.BASE_URL}wasm/dna_core_bg.wasm`
 
 let initialized = false
 let initializing: Promise<void> | null = null
