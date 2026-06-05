@@ -1,17 +1,20 @@
 import { useMemo, useRef, useEffect, useState } from 'react'
 import { Canvas, useFrame, type ThreeEvent } from '@react-three/fiber'
-import { OrbitControls, Stars } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { computeHelix, ensureWasm } from '../wasm/dnaCore'
 import { BASE_COLOR } from '../lib/colors'
 import type { HelixData, SelectedBase } from '../lib/types'
 
 const SCALE = 0.18
-const SENSE_RADIUS = 1.4
-const ANTISENSE_RADIUS = 1.05
-const BASE_GEOMETRY = new THREE.SphereGeometry(1, 20, 16)
-const BACKBONE_RADIUS = 0.18
-const BACKBONE_SEGMENTS = 12
+const TUBE_RADIUS = 0.32
+const TUBE_RADIAL_SEGMENTS = 12
+const RUNG_RADIUS = 0.14
+const RUNG_RADIAL_SEGMENTS = 8
+const BASE_MARKER_RADIUS = 0.42
+const SENSE_BACKBONE_COLOR = '#cbd5e1'
+const ANTISENSE_BACKBONE_COLOR = '#94a3b8'
+const HIGHLIGHT_COLOR = '#fde047'
 
 interface HelixMeshProps {
   helix: HelixData
@@ -22,83 +25,113 @@ interface HelixMeshProps {
 
 function HelixMesh({ helix, highlightIndex, onSelectBase, autoRotate }: HelixMeshProps) {
   const groupRef = useRef<THREE.Group>(null)
-  const senseRef = useRef<THREE.InstancedMesh>(null!)
-  const antisenseRef = useRef<THREE.InstancedMesh>(null!)
-  const ladderRef = useRef<THREE.InstancedMesh>(null!)
+  const rungRef = useRef<THREE.InstancedMesh>(null!)
+  const senseMarkerRef = useRef<THREE.InstancedMesh>(null!)
+  const antisenseMarkerRef = useRef<THREE.InstancedMesh>(null!)
 
   const senseCount = helix.is_sense.filter((s) => s).length
   const antisenseCount = helix.length - senseCount
-  const totalLadders = Math.min(senseCount, helix.length)
 
-  useEffect(() => {
-    if (!senseRef.current || !antisenseRef.current || !ladderRef.current) return
-    const dummy = new THREE.Object3D()
-    const colorSense = new THREE.Color()
-    const colorAntisense = new THREE.Color()
-    const colorLadder = new THREE.Color('#475569')
-    const colorHighlight = new THREE.Color('#fde047')
-
+  const sensePositions = useMemo(() => {
+    const out: number[] = []
     for (let i = 0; i < helix.positions.length; i += 3) {
-      const idx = i / 3
-      const x = helix.positions[i] * SCALE
-      const y = helix.positions[i + 1] * SCALE
-      const z = helix.positions[i + 2] * SCALE
-      const isSense = helix.is_sense[idx]
-      const baseCode = helix.bases[idx]
-      const baseIdx = helix.indices[idx]
-      const isHighlighted = highlightIndex === baseIdx
-
-      dummy.position.set(x, y, z)
-      dummy.updateMatrix()
-
-      if (isSense) {
-        senseRef.current.setMatrixAt(idx, dummy.matrix)
-        const c = isHighlighted
-          ? colorHighlight
-          : colorSense.set(BASE_COLOR[baseCode as 0 | 1 | 2 | 3 | 4] ?? '#ef4444')
-        senseRef.current.setColorAt(idx, c)
-      } else {
-        antisenseRef.current.setMatrixAt(idx, dummy.matrix)
-        const c = isHighlighted
-          ? colorHighlight
-          : colorAntisense.set(BASE_COLOR[baseCode as 0 | 1 | 2 | 3 | 4] ?? '#ef4444')
-        antisenseRef.current.setColorAt(idx, c)
+      if (helix.is_sense[i / 3]) {
+        out.push(helix.positions[i] * SCALE, helix.positions[i + 1] * SCALE, helix.positions[i + 2] * SCALE)
       }
     }
+    return out
+  }, [helix])
 
-    for (let i = 0; i < totalLadders; i++) {
+  const antisensePositions = useMemo(() => {
+    const out: number[] = []
+    for (let i = 0; i < helix.positions.length; i += 3) {
+      if (!helix.is_sense[i / 3]) {
+        out.push(helix.positions[i] * SCALE, helix.positions[i + 1] * SCALE, helix.positions[i + 2] * SCALE)
+      }
+    }
+    return out
+  }, [helix])
+
+  useEffect(() => {
+    if (!rungRef.current || !senseMarkerRef.current || !antisenseMarkerRef.current) return
+    const dummy = new THREE.Object3D()
+    const colorRung = new THREE.Color()
+    const colorMarker = new THREE.Color()
+
+    const yAxis = new THREE.Vector3(0, 1, 0)
+    const dir = new THREE.Vector3()
+    const quat = new THREE.Quaternion()
+
+    for (let i = 0; i < helix.length; i++) {
       const senseIdx = i * 2
-      const antisenseIdx = i * 2 + 1
+      const asIdx = i * 2 + 1
       const sx = helix.positions[senseIdx * 3] * SCALE
       const sy = helix.positions[senseIdx * 3 + 1] * SCALE
       const sz = helix.positions[senseIdx * 3 + 2] * SCALE
-      const ax = helix.positions[antisenseIdx * 3] * SCALE
-      const ay = helix.positions[antisenseIdx * 3 + 1] * SCALE
-      const az = helix.positions[antisenseIdx * 3 + 2] * SCALE
-      const mx = (sx + ax) / 2
-      const my = (sy + ay) / 2
-      const mz = (sz + az) / 2
-      const dx = ax - sx
-      const dy = ay - sy
-      const dz = az - sz
-      const len = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      const ax = helix.positions[asIdx * 3] * SCALE
+      const ay = helix.positions[asIdx * 3 + 1] * SCALE
+      const az = helix.positions[asIdx * 3 + 2] * SCALE
 
-      dummy.position.set(mx, my, mz)
-      dummy.rotation.set(0, 0, 0)
-      dummy.lookAt(ax, ay, az)
-      dummy.scale.set(1, 1, Math.max(len, 0.1))
+      dir.set(ax - sx, ay - sy, az - sz)
+      const len = dir.length()
+      dir.normalize()
+      quat.setFromUnitVectors(yAxis, dir)
+
+      dummy.position.set((sx + ax) / 2, (sy + ay) / 2, (sz + az) / 2)
+      dummy.quaternion.copy(quat)
+      dummy.scale.set(1, Math.max(len, 0.01), 1)
       dummy.updateMatrix()
-      ladderRef.current.setMatrixAt(i, dummy.matrix)
-      ladderRef.current.setColorAt(i, colorLadder)
+      rungRef.current.setMatrixAt(i, dummy.matrix)
+
+      const senseBase = helix.bases[senseIdx] as 0 | 1 | 2 | 3
+      const isHl = highlightIndex === i
+      colorRung.set(isHl ? HIGHLIGHT_COLOR : BASE_COLOR[senseBase] ?? '#ef4444')
+      rungRef.current.setColorAt(i, colorRung)
     }
 
-    senseRef.current.instanceMatrix.needsUpdate = true
-    if (senseRef.current.instanceColor) senseRef.current.instanceColor.needsUpdate = true
-    antisenseRef.current.instanceMatrix.needsUpdate = true
-    if (antisenseRef.current.instanceColor) antisenseRef.current.instanceColor.needsUpdate = true
-    ladderRef.current.instanceMatrix.needsUpdate = true
-    if (ladderRef.current.instanceColor) ladderRef.current.instanceColor.needsUpdate = true
-  }, [helix, highlightIndex, totalLadders])
+    for (let i = 0; i < senseCount; i++) {
+      const senseIdx = i * 2
+      const x = helix.positions[senseIdx * 3] * SCALE
+      const y = helix.positions[senseIdx * 3 + 1] * SCALE
+      const z = helix.positions[senseIdx * 3 + 2] * SCALE
+      const baseCode = helix.bases[senseIdx] as 0 | 1 | 2 | 3
+      const baseIdx = helix.indices[senseIdx]
+      const isHl = highlightIndex === baseIdx
+
+      dummy.position.set(x, y, z)
+      dummy.quaternion.identity()
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      senseMarkerRef.current.setMatrixAt(i, dummy.matrix)
+      colorMarker.set(isHl ? HIGHLIGHT_COLOR : BASE_COLOR[baseCode] ?? '#ef4444')
+      senseMarkerRef.current.setColorAt(i, colorMarker)
+    }
+
+    for (let i = 0; i < antisenseCount; i++) {
+      const asIdx = i * 2 + 1
+      const x = helix.positions[asIdx * 3] * SCALE
+      const y = helix.positions[asIdx * 3 + 1] * SCALE
+      const z = helix.positions[asIdx * 3 + 2] * SCALE
+      const baseCode = helix.bases[asIdx] as 0 | 1 | 2 | 3
+      const baseIdx = helix.indices[asIdx]
+      const isHl = highlightIndex === baseIdx
+
+      dummy.position.set(x, y, z)
+      dummy.quaternion.identity()
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      antisenseMarkerRef.current.setMatrixAt(i, dummy.matrix)
+      colorMarker.set(isHl ? HIGHLIGHT_COLOR : BASE_COLOR[baseCode] ?? '#ef4444')
+      antisenseMarkerRef.current.setColorAt(i, colorMarker)
+    }
+
+    rungRef.current.instanceMatrix.needsUpdate = true
+    if (rungRef.current.instanceColor) rungRef.current.instanceColor.needsUpdate = true
+    senseMarkerRef.current.instanceMatrix.needsUpdate = true
+    if (senseMarkerRef.current.instanceColor) senseMarkerRef.current.instanceColor.needsUpdate = true
+    antisenseMarkerRef.current.instanceMatrix.needsUpdate = true
+    if (antisenseMarkerRef.current.instanceColor) antisenseMarkerRef.current.instanceColor.needsUpdate = true
+  }, [helix, highlightIndex, senseCount, antisenseCount])
 
   useFrame((_, delta) => {
     if (autoRotate && groupRef.current) {
@@ -106,96 +139,98 @@ function HelixMesh({ helix, highlightIndex, onSelectBase, autoRotate }: HelixMes
     }
   })
 
-  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+  const handleRungClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    const instanceId = e.instanceId
-    if (instanceId == null) return
-    const isSense = helix.is_sense[instanceId]
-    const baseCode = helix.bases[instanceId] as 0 | 1 | 2 | 3 | 4
-    const index = helix.indices[instanceId]
-    onSelectBase({ index, is_sense: isSense, base: baseCode })
+    const id = e.instanceId
+    if (id == null) return
+    const senseIdx = id * 2
+    const baseCode = helix.bases[senseIdx] as 0 | 1 | 2 | 3
+    onSelectBase({ index: helix.indices[senseIdx], is_sense: true, base: baseCode })
+  }
+
+  const handleSenseMarkerClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    const id = e.instanceId
+    if (id == null) return
+    const senseIdx = id * 2
+    const baseCode = helix.bases[senseIdx] as 0 | 1 | 2 | 3
+    onSelectBase({ index: helix.indices[senseIdx], is_sense: true, base: baseCode })
+  }
+
+  const handleAntisenseMarkerClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    const id = e.instanceId
+    if (id == null) return
+    const asIdx = id * 2 + 1
+    const baseCode = helix.bases[asIdx] as 0 | 1 | 2 | 3
+    onSelectBase({ index: helix.indices[asIdx], is_sense: false, base: baseCode })
   }
 
   return (
     <group ref={groupRef}>
+      <BackboneTube positions={sensePositions} color={SENSE_BACKBONE_COLOR} />
+      <BackboneTube positions={antisensePositions} color={ANTISENSE_BACKBONE_COLOR} />
       <instancedMesh
-        ref={senseRef}
-        args={[BASE_GEOMETRY, undefined, senseCount]}
+        ref={rungRef}
+        args={[new THREE.CylinderGeometry(RUNG_RADIUS, RUNG_RADIUS, 1, RUNG_RADIAL_SEGMENTS), undefined, helix.length]}
+        onClick={handleRungClick}
         castShadow
         receiveShadow
-        onClick={handleClick}
-        scale={[SENSE_RADIUS, SENSE_RADIUS, SENSE_RADIUS]}
       >
-        <meshStandardMaterial roughness={0.3} metalness={0.15} emissiveIntensity={0.5} />
+        <meshStandardMaterial roughness={0.4} metalness={0.3} />
       </instancedMesh>
       <instancedMesh
-        ref={antisenseRef}
-        args={[BASE_GEOMETRY, undefined, antisenseCount]}
+        ref={senseMarkerRef}
+        args={[new THREE.SphereGeometry(BASE_MARKER_RADIUS, 18, 14), undefined, senseCount]}
+        onClick={handleSenseMarkerClick}
         castShadow
         receiveShadow
-        onClick={handleClick}
-        scale={[ANTISENSE_RADIUS, ANTISENSE_RADIUS, ANTISENSE_RADIUS]}
       >
-        <meshStandardMaterial roughness={0.35} metalness={0.1} emissiveIntensity={0.4} />
+        <meshStandardMaterial roughness={0.3} metalness={0.2} />
       </instancedMesh>
       <instancedMesh
-        ref={ladderRef}
-        args={[new THREE.CylinderGeometry(BACKBONE_RADIUS, BACKBONE_RADIUS, 1, BACKBONE_SEGMENTS), undefined, totalLadders]}
+        ref={antisenseMarkerRef}
+        args={[new THREE.SphereGeometry(BASE_MARKER_RADIUS * 0.85, 18, 14), undefined, antisenseCount]}
+        onClick={handleAntisenseMarkerClick}
+        castShadow
+        receiveShadow
       >
-        <meshStandardMaterial roughness={0.6} metalness={0.3} />
+        <meshStandardMaterial roughness={0.35} metalness={0.2} />
       </instancedMesh>
-      <BackboneLines helix={helix} />
     </group>
   )
 }
 
-function BackboneLines({ helix }: { helix: HelixData }) {
+function BackboneTube({ positions, color }: { positions: number[]; color: string }) {
   const geometry = useMemo(() => {
-    const positions: number[] = []
-    const colors: number[] = []
-    const c1 = new THREE.Color('#a78bfa')
-    const c2 = new THREE.Color('#22d3ee')
-    for (let s = 0; s < 2; s++) {
-      for (let i = 0; i + 1 < helix.length; i++) {
-        const idx1 = i * 2 + (s === 0 ? 0 : 1)
-        const idx2 = (i + 1) * 2 + (s === 0 ? 0 : 1)
-        const x1 = helix.positions[idx1 * 3] * SCALE
-        const y1 = helix.positions[idx1 * 3 + 1] * SCALE
-        const z1 = helix.positions[idx1 * 3 + 2] * SCALE
-        const x2 = helix.positions[idx2 * 3] * SCALE
-        const y2 = helix.positions[idx2 * 3 + 1] * SCALE
-        const z2 = helix.positions[idx2 * 3 + 2] * SCALE
-        positions.push(x1, y1, z1, x2, y2, z2)
-        const col = s === 0 ? c1 : c2
-        colors.push(col.r, col.g, col.b, col.r, col.g, col.b)
-      }
+    if (positions.length < 9) return null
+    const pts: THREE.Vector3[] = []
+    for (let i = 0; i < positions.length; i += 3) {
+      pts.push(new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]))
     }
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-    return g
-  }, [helix])
+    if (pts.length < 2) return null
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5)
+    const tubularSegments = Math.max(pts.length * 6, 80)
+    return new THREE.TubeGeometry(curve, tubularSegments, TUBE_RADIUS, TUBE_RADIAL_SEGMENTS, false)
+  }, [positions])
+
+  if (!geometry) return null
 
   return (
-    <lineSegments geometry={geometry}>
-      <lineBasicMaterial vertexColors linewidth={1} transparent opacity={0.55} />
-    </lineSegments>
+    <mesh geometry={geometry} castShadow receiveShadow>
+      <meshStandardMaterial color={color} roughness={0.45} metalness={0.25} />
+    </mesh>
   )
 }
 
-function SceneContents({
-  helix,
-  highlightIndex,
-  onSelectBase,
-  autoRotate,
-  showStars,
-}: {
+interface SceneContentsProps {
   helix: HelixData
   highlightIndex: number | null
   onSelectBase: (b: SelectedBase) => void
   autoRotate: boolean
-  showStars: boolean
-}) {
+}
+
+function SceneContents({ helix, highlightIndex, onSelectBase, autoRotate }: SceneContentsProps) {
   const centerAndScale = useMemo(() => {
     if (!helix.length) return { cx: 0, cy: 0, cz: 0, span: 30 }
     let minX = Infinity, maxX = -Infinity
@@ -220,18 +255,16 @@ function SceneContents({
 
   return (
     <>
-      <color attach="background" args={['#06060c']} />
-      <fog attach="fog" args={['#06060c', cameraDistance * 0.6, cameraDistance * 4]} />
-      <ambientLight intensity={0.6} color="#a5b4fc" />
-      <directionalLight
-        position={[15, 15, 15]}
-        intensity={1.3}
-        color="#fef3c7"
+      <color attach="background" args={['#0a0a14']} />
+      <fog attach="fog" args={['#0a0a14', cameraDistance * 0.7, cameraDistance * 4]} />
+      <ambientLight intensity={0.35} color="#a5b4fc" />
+      <directionalLight position={[18, 22, 14]} intensity={1.4} color="#ffffff" castShadow />
+      <directionalLight position={[-12, -8, -10]} intensity={0.45} color="#60a5fa" />
+      <pointLight position={[0, 0, 18]} intensity={0.35} color="#f472b6" />
+      <gridHelper
+        args={[80, 20, '#1e293b', '#0f172a']}
+        position={[0, centerAndScale.cy * SCALE - 8, 0]}
       />
-      <directionalLight position={[-10, -5, -10]} intensity={0.5} color="#22d3ee" />
-      <pointLight position={[0, 0, 20]} intensity={0.4} color="#f472b6" />
-      {showStars && <Stars radius={120} depth={50} count={2500} factor={4} fade speed={1} />}
-      <gridHelper args={[80, 20, '#1e293b', '#0f172a']} position={[0, centerAndScale.cy * SCALE - 6, 0]} />
       <group position={[-centerAndScale.cx * SCALE, -centerAndScale.cy * SCALE, -centerAndScale.cz * SCALE]}>
         <HelixMesh
           helix={helix}
@@ -246,7 +279,6 @@ function SceneContents({
         enableRotate
         minDistance={4}
         maxDistance={cameraDistance * 4}
-        autoRotate={false}
       />
     </>
   )
@@ -257,16 +289,9 @@ interface HelixSceneProps {
   highlightIndex: number | null
   onSelectBase: (b: SelectedBase) => void
   autoRotate: boolean
-  showStars: boolean
 }
 
-export function HelixScene({
-  sequence,
-  highlightIndex,
-  onSelectBase,
-  autoRotate,
-  showStars,
-}: HelixSceneProps) {
+export function HelixScene({ sequence, highlightIndex, onSelectBase, autoRotate }: HelixSceneProps) {
   const [helix, setHelix] = useState<HelixData | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -321,7 +346,7 @@ export function HelixScene({
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [25, 15, 35], fov: 50, near: 0.1, far: 2000 }}
+      camera={{ position: [22, 12, 32], fov: 45, near: 0.1, far: 2000 }}
       gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
     >
       <SceneContents
@@ -329,7 +354,6 @@ export function HelixScene({
         highlightIndex={highlightIndex}
         onSelectBase={onSelectBase}
         autoRotate={autoRotate}
-        showStars={showStars}
       />
     </Canvas>
   )

@@ -12,8 +12,6 @@ interface ControlPanelProps {
   onClear: () => void
   autoRotate: boolean
   onToggleAutoRotate: () => void
-  showStars: boolean
-  onToggleStars: () => void
   canMutate: boolean
 }
 
@@ -27,8 +25,6 @@ export function ControlPanel({
   onClear,
   autoRotate,
   onToggleAutoRotate,
-  showStars,
-  onToggleStars,
   canMutate,
 }: ControlPanelProps) {
   const [motifQuery, setMotifQuery] = useState('')
@@ -156,15 +152,6 @@ export function ControlPanel({
             onClick={onToggleAutoRotate}
           >
             {autoRotate ? 'on' : 'off'}
-          </button>
-        </label>
-        <label className="flex items-center justify-between text-xs text-ink-400">
-          <span>Star field</span>
-          <button
-            className={`pill ${showStars ? 'bg-accent/20 text-accent' : 'bg-ink-800 text-ink-500'}`}
-            onClick={onToggleStars}
-          >
-            {showStars ? 'on' : 'off'}
           </button>
         </label>
       </div>

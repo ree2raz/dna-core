@@ -5,6 +5,7 @@ import { SequenceView } from './components/SequenceView'
 import { ProteinView } from './components/ProteinView'
 import { StatsBar } from './components/StatsBar'
 import { BaseInfoCard } from './components/BaseInfoCard'
+import { HelpModal } from './components/HelpModal'
 import {
   ensureWasm,
   transcribe as transcribeWasm,
@@ -34,7 +35,7 @@ function App() {
   const [selected, setSelected] = useState<SelectedBase | null>(null)
   const [highlightIndex, setHighlightIndex] = useState<number | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
-  const [showStars, setShowStars] = useState(true)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastIdRef = useRef(0)
   const [helix, setHelix] = useState<HelixData | null>(null)
@@ -46,6 +47,11 @@ function App() {
     ensureWasm()
       .then(() => setWasmReady(true))
       .catch((e) => setWasmError(e?.message ?? String(e)))
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('help') === '1') setHelpOpen(true)
   }, [])
 
   useEffect(() => {
@@ -172,43 +178,8 @@ function App() {
         </div>
       )}
 
-      <div className="grid h-full grid-cols-1 lg:grid-cols-[360px_1fr_360px]">
-        <aside className="border-r border-ink-700/40 bg-ink-900/40 p-4 overflow-y-auto">
-          <header className="mb-4">
-            <div className="flex items-center gap-2">
-              <DnaLogo />
-              <h1 className="text-lg font-semibold tracking-tight text-ink-100">genome-canvas</h1>
-            </div>
-            <p className="mt-1 text-[11px] text-ink-500">
-              3D DNA playground · Rust <span className="text-accent">→</span> WASM <span className="text-accent">→</span> Three.js
-            </p>
-          </header>
-          <ControlPanel
-            sequence={sequence}
-            onSequenceChange={setSequence}
-            onMutate={handleMutate}
-            onAutoMutate={handleAutoMutate}
-            onReverse={handleReverse}
-            onComplement={handleComplement}
-            onClear={handleClear}
-            autoRotate={autoRotate}
-            onToggleAutoRotate={() => setAutoRotate((v) => !v)}
-            showStars={showStars}
-            onToggleStars={() => setShowStars((v) => !v)}
-            canMutate={sequence.length > 0}
-          />
-          <div className="mt-4">
-            <StatsBar
-              length={stats.length}
-              gc={gc}
-              at={stats.at}
-              turns={stats.turns}
-              helixHeight={stats.height}
-            />
-          </div>
-        </aside>
-
-        <main className="relative bg-ink-950">
+      <div className="flex h-full flex-col overflow-y-auto lg:grid lg:grid-cols-[320px_1fr_340px] lg:overflow-hidden">
+        <main className="relative order-1 h-[58vh] min-h-[420px] shrink-0 border-b border-ink-700/40 lg:order-2 lg:col-start-2 lg:h-full lg:min-h-0 lg:border-b-0">
           {!wasmReady && !wasmError && (
             <div className="absolute inset-0 z-10 flex items-center justify-center text-ink-400">
               <div className="text-center">
@@ -222,14 +193,13 @@ function App() {
             highlightIndex={highlightIndex}
             onSelectBase={handleSelectBase}
             autoRotate={autoRotate}
-            showStars={showStars}
           />
           <BaseInfoCard
             selected={selected}
             sequence={sequence}
             onClose={() => setSelected(null)}
           />
-          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-ink-900/60 px-3 py-1 text-[10px] uppercase tracking-wider text-ink-500 backdrop-blur">
+          <div className="pointer-events-none absolute bottom-3 left-1/2 hidden -translate-x-1/2 rounded-full bg-ink-900/70 px-3 py-1 text-[10px] uppercase tracking-wider text-ink-400 backdrop-blur sm:block">
             drag to rotate · scroll to zoom · click a base
           </div>
           <div className="pointer-events-none absolute right-4 top-4 flex flex-col gap-1">
@@ -250,7 +220,63 @@ function App() {
           </div>
         </main>
 
-        <aside className="border-l border-ink-700/40 bg-ink-900/40 p-4 overflow-y-auto">
+        <aside className="order-2 flex shrink-0 flex-col gap-4 border-b border-ink-700/40 bg-ink-900/40 p-4 lg:order-1 lg:col-start-1 lg:row-start-1 lg:flex lg:h-full lg:shrink lg:flex-col lg:gap-4 lg:overflow-y-auto lg:border-b-0 lg:border-r xl:flex xl:flex-col xl:gap-4">
+          <header className="mb-1 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <DnaLogo />
+              <div>
+                <h1 className="text-base font-semibold tracking-tight text-ink-100 sm:text-lg">
+                  genome-canvas
+                </h1>
+                <p className="text-[10px] text-ink-500 sm:text-[11px]">
+                  3D DNA playground · Rust <span className="text-accent">→</span> WASM{' '}
+                  <span className="text-accent">→</span> Three.js
+                </p>
+              </div>
+            </div>
+            <button
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-ink-700/60 bg-ink-800/40 text-ink-400 transition hover:border-accent/40 hover:bg-ink-800 hover:text-ink-100"
+              onClick={() => setHelpOpen(true)}
+              aria-label="Open help"
+              title="Help (press ?)"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M9.1 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01" />
+              </svg>
+            </button>
+          </header>
+          <ControlPanel
+            sequence={sequence}
+            onSequenceChange={setSequence}
+            onMutate={handleMutate}
+            onAutoMutate={handleAutoMutate}
+            onReverse={handleReverse}
+            onComplement={handleComplement}
+            onClear={handleClear}
+            autoRotate={autoRotate}
+            onToggleAutoRotate={() => setAutoRotate((v) => !v)}
+            canMutate={sequence.length > 0}
+          />
+          <StatsBar
+            length={stats.length}
+            gc={gc}
+            at={stats.at}
+            turns={stats.turns}
+            helixHeight={stats.height}
+          />
+        </aside>
+
+        <aside className="order-3 shrink-0 bg-ink-900/40 p-4 lg:order-3 lg:col-start-3 lg:row-start-1 lg:h-full lg:overflow-y-auto xl:overflow-y-auto">
           <div className="panel p-4">
             <h2 className="mb-3 text-sm font-semibold text-ink-100">Sequences</h2>
             <SequenceView
@@ -273,21 +299,49 @@ function App() {
           </div>
         </aside>
       </div>
+
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      <KeyboardHint onOpenHelp={() => setHelpOpen(true)} />
     </div>
   )
+}
+
+function KeyboardHint({ onOpenHelp }: { onOpenHelp: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        e.preventDefault()
+        onOpenHelp()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onOpenHelp])
+  return null
 }
 
 function DnaLogo() {
   return (
     <svg width="22" height="22" viewBox="0 0 64 64" className="shrink-0">
-      <circle cx="20" cy="20" r="6" fill="#ef4444" />
-      <circle cx="44" cy="20" r="6" fill="#3b82f6" />
-      <circle cx="20" cy="44" r="6" fill="#22c55e" />
-      <circle cx="44" cy="44" r="6" fill="#facc15" />
-      <line x1="20" y1="20" x2="44" y2="20" stroke="#64748b" strokeWidth="2" />
-      <line x1="20" y1="44" x2="44" y2="44" stroke="#64748b" strokeWidth="2" />
-      <line x1="20" y1="20" x2="20" y2="44" stroke="#a78bfa" strokeWidth="2" opacity="0.6" />
-      <line x1="44" y1="20" x2="44" y2="44" stroke="#22d3ee" strokeWidth="2" opacity="0.6" />
+      <defs>
+        <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#cbd5e1" />
+          <stop offset="1" stopColor="#94a3b8" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M20 8 C 44 8, 44 56, 20 56 M44 8 C 20 8, 20 56, 44 56"
+        stroke="url(#logoGrad)"
+        strokeWidth="3"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <line x1="20" y1="20" x2="44" y2="20" stroke="#94a3b8" strokeWidth="2" opacity="0.7" />
+      <line x1="20" y1="32" x2="44" y2="32" stroke="#94a3b8" strokeWidth="2" opacity="0.7" />
+      <line x1="20" y1="44" x2="44" y2="44" stroke="#94a3b8" strokeWidth="2" opacity="0.7" />
     </svg>
   )
 }

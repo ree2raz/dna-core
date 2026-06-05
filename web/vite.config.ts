@@ -9,9 +9,15 @@ const wasmPkg = path.resolve(__dirname, '../crates/dna-core/pkg')
 export default defineConfig({
   plugins: [react()],
   server: {
+    port: 5178,
+    strictPort: true,
     fs: {
       allow: [path.resolve(__dirname, '..')],
     },
+  },
+  preview: {
+    port: 5178,
+    strictPort: true,
   },
   optimizeDeps: {
     exclude: ['dna-core'],
